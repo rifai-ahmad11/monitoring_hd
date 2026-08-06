@@ -1,0 +1,44 @@
+{% extends "admin_base.html" %}
+{% block title %}Maintenance Configuration{% endblock %}
+{% block admin_icon %}<i class="fas fa-tools" aria-hidden="true"></i>{% endblock %}
+{% block admin_title %}Maintenance Configuration{% endblock %}
+{% block admin_nav %}
+<a class="btn btn-glass" href="/admin"><i class="fas fa-database" aria-hidden="true"></i> Metadata</a>
+<a class="btn btn-glass" href="/admin/users"><i class="fas fa-users-cog" aria-hidden="true"></i> Users</a>
+{% endblock %}
+{% block admin_content %}
+<section class="admin-card">
+  <h2><i class="fas fa-pen" aria-hidden="true"></i> Tambah / Edit Konfigurasi Maintenance</h2>
+  <form id="maintenanceForm" class="form-grid">
+    <input type="hidden" id="editingConfigId">
+    <label><span>Item Code *</span><input id="itemCode" required placeholder="Item Code (contoh: filter_inlet) *"></label>
+    <label><span>Nama Item *</span><input id="itemName" required placeholder="Nama Item *"></label>
+    <label class="full-span"><span>Deskripsi</span><textarea id="description" placeholder="Deskripsi (opsional)"></textarea></label>
+    <label><span>Tipe Threshold *</span>
+      <select id="thresholdType" required>
+        <option value="">Tipe Threshold *</option>
+        <option value="treatment_count">Treatment Count</option>
+        <option value="time_interval">Time Interval</option>
+      </select>
+    </label>
+    <label><span>Nilai Threshold *</span><input id="thresholdValue" type="number" min="1" required placeholder="Nilai Threshold *"></label>
+    <label id="timeUnitField" class="hidden"><span>Satuan Waktu *</span><select id="timeUnit"><option value="months">Months</option><option value="days">Days</option></select></label>
+    <div class="form-actions full-span">
+      <button class="btn btn-success write-action" type="submit"><i class="fas fa-save" aria-hidden="true"></i> Simpan</button>
+      <button class="btn btn-muted" id="clearMaintenance" type="button"><i class="fas fa-eraser" aria-hidden="true"></i> Bersihkan Form</button>
+    </div>
+  </form>
+</section>
+<section>
+  <h2 class="table-title"><i class="fas fa-list" aria-hidden="true"></i> Daftar Konfigurasi Maintenance</h2>
+  <div class="table-card">
+    <table>
+      <thead><tr><th>Item Code</th><th>Nama</th><th>Deskripsi</th><th>Tipe</th><th>Threshold</th><th>Aksi</th></tr></thead>
+      <tbody id="maintenanceTable"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block admin_scripts %}
+<script src="{{ url_for('static', filename='js/admin_maintenance.js') }}"></script>
+{% endblock %}

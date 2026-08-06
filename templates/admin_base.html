@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block body %}
+<main class="admin-page">
+  <header class="admin-header">
+    <h1>{% block admin_icon %}<i class="fas fa-database" aria-hidden="true"></i>{% endblock %} {% block admin_title %}Admin{% endblock %}</h1>
+    <nav class="admin-nav">
+      <a class="btn btn-glass" href="/"><i class="fas fa-tachometer-alt" aria-hidden="true"></i> Dashboard</a>
+      {% block admin_nav %}{% endblock %}
+      <a class="btn btn-danger" href="/logout"><i class="fas fa-sign-out-alt" aria-hidden="true"></i> Logout</a>
+    </nav>
+  </header>
+  {% if current_user.role == 'viewer' %}
+  <div class="viewer-banner">Mode Viewer — Anda dapat melihat data, tetapi tidak dapat mengubahnya.</div>
+  {% endif %}
+  {% block admin_content %}{% endblock %}
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+{% block admin_scripts %}{% endblock %}
+{% endblock %}

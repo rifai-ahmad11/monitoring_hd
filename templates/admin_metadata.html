@@ -1,0 +1,45 @@
+{% extends "admin_base.html" %}
+{% block title %}Manajemen Metadata Mesin{% endblock %}
+{% block admin_icon %}<i class="fas fa-database" aria-hidden="true"></i>{% endblock %}
+{% block admin_title %}Manajemen Metadata Mesin{% endblock %}
+{% block admin_nav %}
+<a class="btn btn-glass" href="/admin/users"><i class="fas fa-users-cog" aria-hidden="true"></i> Users</a>
+<a class="btn btn-glass" href="/admin/maintenance"><i class="fas fa-tools" aria-hidden="true"></i> Maintenance</a>
+{% endblock %}
+{% block admin_content %}
+<section class="admin-card">
+  <h2><i class="fas fa-pen" aria-hidden="true"></i> Tambah / Edit Metadata</h2>
+  <form id="metadataForm" class="form-grid">
+    <input type="hidden" id="editingMachineId">
+    <label><span>Machine ID *</span><input id="machineId" required placeholder="Machine ID *"></label>
+    <label><span>Serial Number *</span><input id="serialNumber" required placeholder="Serial Number *"></label>
+    <label><span>Nama RS/Klinik *</span><input id="hospitalName" required placeholder="Nama RS/Klinik *"></label>
+    <label><span>Nomor Unit *</span><input id="unitNumber" type="number" min="1" required placeholder="Nomor Unit *"></label>
+    <label><span>Region *</span><input id="region" required placeholder="Region (contoh: Jawa Barat)"></label>
+    <label><span>Subregion *</span><input id="subregion" required placeholder="Subregion (contoh: Bandung)"></label>
+    <label><span>Kategori *</span><select id="category" required><option>Non-KSO</option><option>KSO</option></select></label>
+    <label><span>Tanggal Instalasi *</span><input id="installationDate" type="date" required></label>
+    <div class="form-actions full-span">
+      <button class="btn btn-success write-action" type="submit"><i class="fas fa-save" aria-hidden="true"></i> Simpan Metadata</button>
+      <button class="btn btn-muted" id="clearMetadata" type="button"><i class="fas fa-eraser" aria-hidden="true"></i> Bersihkan Form</button>
+    </div>
+  </form>
+</section>
+<hr class="section-divider">
+<section>
+  <h2 class="table-title"><i class="fas fa-list" aria-hidden="true"></i> Daftar Metadata Mesin</h2>
+  <div class="filter-row">
+    <select id="regionFilter"><option value="">Semua Region</option></select>
+    <select id="subregionFilter"><option value="">Semua Subregion</option></select>
+  </div>
+  <div class="table-card">
+    <table>
+      <thead><tr><th>Machine ID</th><th>Serial Number</th><th>Nama RS</th><th>Unit</th><th>Region</th><th>Subregion</th><th>Kategori</th><th>Aksi</th></tr></thead>
+      <tbody id="metadataTable"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block admin_scripts %}
+<script src="{{ url_for('static', filename='js/admin_metadata.js') }}"></script>
+{% endblock %}

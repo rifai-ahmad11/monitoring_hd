@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Login · HD Machine Monitoring{% endblock %}
+{% block body %}
+<main class="login-page">
+  <section class="login-card">
+    <div class="brand-logo large"><span class="heart-line">♥</span></div>
+    <h1>HD Machine Monitoring</h1>
+    <p>Real-time Monitoring System</p>
+    {% if error %}<div class="form-alert">{{ error }}</div>{% endif %}
+    <form method="post" class="login-form">
+      <label>
+        <span>Username</span>
+        <input name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">Masuk ke Dashboard</button>
+    </form>
+    <small>Gunakan akun yang telah dibuat oleh administrator.</small>
+  </section>
+</main>
+{% endblock %}

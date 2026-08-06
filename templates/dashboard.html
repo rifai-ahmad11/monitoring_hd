@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <button class="mobile-close" id="closeSidebar" aria-label="Tutup menu">×</button>
+    <div class="sidebar-brand">
+      <div class="brand-logo"><span class="heart-line">♥</span></div>
+      <h1>HD Machine Monitoring</h1>
+      <p>Real-time Monitoring System</p>
+    </div>
+    <nav class="sidebar-nav" aria-label="Navigasi utama">
+      <a href="/" class="nav-link active" data-nav="summary"><span class="nav-icon"><i class="fas fa-chart-pie" aria-hidden="true"></i></span> Ringkasan</a>
+      <button class="nav-link" id="categoryNav"><span class="nav-icon"><i class="fas fa-layer-group" aria-hidden="true"></i></span> Kategori</button>
+      {% if current_user.role in ['admin', 'viewer'] %}
+      <a href="/admin" class="nav-link"><span class="nav-icon"><i class="fas fa-database" aria-hidden="true"></i></span> Admin Metadata</a>
+      <a href="/admin/users" class="nav-link"><span class="nav-icon"><i class="fas fa-users-cog" aria-hidden="true"></i></span> Manajemen User</a>
+      <a href="/admin/maintenance" class="nav-link"><span class="nav-icon"><i class="fas fa-tools" aria-hidden="true"></i></span> Maintenance Config</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-user">
+      <span>{{ current_user.username }}</span>
+      <small>{{ current_user.role|upper }}</small>
+      <a href="/logout">Logout</a>
+    </div>
+  </aside>
+
+  <main class="dashboard-main">
+    <header class="dashboard-header">
+      <div class="header-title-row">
+        <button class="mobile-menu" id="openSidebar" aria-label="Buka menu">☰</button>
+        <h2 id="pageTitle">Ringkasan Nasional</h2>
+        <div class="header-actions">
+          <button class="btn btn-glass hidden" id="backButton">←&nbsp; Kembali</button>
+          <button class="btn btn-glass" id="refreshButton">⟳&nbsp; Refresh</button>
+        </div>
+      </div>
+      <nav class="breadcrumb" id="breadcrumb" aria-label="Breadcrumb"></nav>
+    </header>
+
+    <section class="summary-grid" id="summaryGrid" aria-label="Ringkasan data"></section>
+
+    <section class="dashboard-section">
+      <h3 id="contentTitle">Pilih Region</h3>
+      <div class="selection-grid" id="selectionGrid"></div>
+      <div class="machine-grid hidden" id="machineGrid"></div>
+      <div class="empty-state hidden" id="emptyState">
+        <div>⌁</div>
+        <h4>Data belum tersedia</h4>
+        <p>Belum ada mesin untuk filter yang dipilih.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-backdrop hidden" id="maintenanceModal" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <button class="modal-close" data-close-modal aria-label="Tutup">×</button>
+    <div class="modal-heading">
+      <span class="modal-icon warning">!</span>
+      <div><h3>Maintenance Diperlukan</h3><p id="maintenanceMachine"></p></div>
+    </div>
+    <div id="maintenanceItems" class="maintenance-items"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="voltageModal" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <button class="modal-close" data-close-modal aria-label="Tutup">×</button>
+    <div class="modal-heading">
+      <span class="modal-icon voltage">⚡</span>
+      <div><h3>Ringkasan Event Tegangan</h3><p id="voltageMachine"></p></div>
+    </div>
+    <div class="voltage-summary" id="voltageSummary"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="humidityModal" role="dialog" aria-modal="true">
+  <div class="modal-card modal-wide">
+    <button class="modal-close" data-close-modal aria-label="Tutup">×</button>
+    <div class="modal-heading">
+      <span class="modal-icon humidity">💧</span>
+      <div><h3>Tren Kelembapan</h3><p id="humidityMachine"></p></div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="humidityCanvas" width="900" height="330"></canvas>
+      <div class="chart-tooltip hidden" id="humidityTooltip" role="tooltip"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
