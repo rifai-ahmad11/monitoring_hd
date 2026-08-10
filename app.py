@@ -9,7 +9,7 @@ from typing import Any
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
-from sqlalchemy import func, inspect
+from sqlalchemy import func, inspect, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.mutable import MutableList
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -28,6 +28,20 @@ REQUIRED_DATABASE_TABLES = {
     "users",
     "humidity_logs",
     "voltage_events",
+}
+
+REQUIRED_DATABASE_COLUMNS = {
+    "machine_metadata": {
+        "is_archived",
+        "archived_at",
+        "archived_by",
+        "archive_note",
+    },
+    "maintenance": {
+        "serial_number_snapshot",
+        "item_name_snapshot",
+        "performed_by_snapshot",
+    },
 }
 
 
@@ -117,6 +131,10 @@ class MachineMetadata(db.Model):
     updated_at = db.Column(
         db.DateTime, nullable=False, default=utcnow, onupdate=utcnow
     )
+    is_archived = db.Column(db.Boolean, nullable=False, default=False)
+    archived_at = db.Column(db.DateTime)
+    archived_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    archive_note = db.Column(db.Text)
 
     machine = db.relationship("Machine", back_populates="metadata_record")
 
@@ -140,8 +158,11 @@ class Maintenance(db.Model):
     item = db.Column(db.String(50), nullable=False)
     dialysis_count = db.Column(db.Integer, nullable=False, default=0)
     timestamp = db.Column(db.DateTime, nullable=False, default=utcnow)
-    description = db.Column(db.Text)
+    description = db.Column(db.Text, nullable=False)
     performed_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    serial_number_snapshot = db.Column(db.String(50), nullable=False)
+    item_name_snapshot = db.Column(db.String(100), nullable=False)
+    performed_by_snapshot = db.Column(db.String(50), nullable=False)
 
 
 class MaintenanceConfig(db.Model):
@@ -318,12 +339,26 @@ def ensure_admin() -> None:
 
 
 def validate_database_schema() -> None:
-    existing_tables = set(inspect(db.engine).get_table_names())
+    database_inspector = inspect(db.engine)
+    existing_tables = set(database_inspector.get_table_names())
     missing_tables = sorted(REQUIRED_DATABASE_TABLES - existing_tables)
     if missing_tables:
         raise RuntimeError(
             "Schema PostgreSQL belum lengkap. Jalankan database/schema.sql. "
             f"Tabel yang belum ada: {', '.join(missing_tables)}"
+        )
+    missing_columns = []
+    for table_name, required_columns in REQUIRED_DATABASE_COLUMNS.items():
+        existing_columns = {
+            column["name"] for column in database_inspector.get_columns(table_name)
+        }
+        for column_name in sorted(required_columns - existing_columns):
+            missing_columns.append(f"{table_name}.{column_name}")
+    if missing_columns:
+        raise RuntimeError(
+            "Schema PostgreSQL perlu dimigrasikan. Jalankan "
+            "database/migrate_maintenance_history_archive.sql. Kolom yang belum "
+            f"ada: {', '.join(missing_columns)}"
         )
 
 
@@ -570,6 +605,8 @@ def maintenance_status(
     configs: list[MaintenanceConfig],
     maintenance_map: dict[tuple[str, str], dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if metadata and metadata.is_archived:
+        return []
     output: list[dict[str, Any]] = []
     now = utcnow()
     for config in configs:
@@ -664,6 +701,9 @@ def machine_to_dict(
             "region": metadata.region if metadata else "Tanpa Region",
             "subregion": metadata.subregion if metadata else "Tanpa Subregion",
             "category": metadata.category if metadata else "Non-KSO",
+            "is_archived": bool(metadata.is_archived) if metadata else False,
+            "archived_at": iso_utc(metadata.archived_at) if metadata else None,
+            "archive_note": metadata.archive_note if metadata else None,
             "installation_date": (
                 metadata.installation_date.isoformat()
                 if metadata and metadata.installation_date
@@ -684,6 +724,9 @@ def metadata_payload(record: MachineMetadata) -> dict[str, Any]:
         "region": record.region,
         "subregion": record.subregion,
         "category": record.category,
+        "is_archived": bool(record.is_archived),
+        "archived_at": iso_utc(record.archived_at),
+        "archive_note": record.archive_note,
         "installation_date": (
             record.installation_date.isoformat() if record.installation_date else None
         ),
@@ -721,6 +764,69 @@ def validate_metadata(data: dict[str, Any], partial: bool = False) -> tuple[dict
         except (TypeError, ValueError):
             return {}, "Tanggal instalasi tidak valid"
     return clean, None
+
+
+def parse_date_filter(value: str, label: str) -> tuple[date | None, str | None]:
+    if not value:
+        return None, None
+    try:
+        return date.fromisoformat(value), None
+    except ValueError:
+        return None, f"{label} harus menggunakan format YYYY-MM-DD"
+
+
+def maintenance_history_base_query(user: User):
+    query = (
+        db.session.query(Maintenance, MachineMetadata, MaintenanceConfig, User)
+        .outerjoin(
+            MachineMetadata,
+            Maintenance.machine_id == MachineMetadata.machine_id,
+        )
+        .outerjoin(
+            MaintenanceConfig,
+            Maintenance.item == MaintenanceConfig.item_code,
+        )
+        .outerjoin(User, Maintenance.performed_by == User.id)
+    )
+    if user.role == "teknisi":
+        allowed = user.assigned_regions or []
+        if not allowed:
+            return query.filter(db.false())
+        query = query.filter(MachineMetadata.subregion.in_(allowed))
+    return query
+
+
+def maintenance_history_payload(
+    maintenance: Maintenance,
+    metadata: MachineMetadata | None,
+    config: MaintenanceConfig | None,
+    performer: User | None,
+) -> dict[str, Any]:
+    return {
+        "id": maintenance.id,
+        "timestamp": iso_utc(maintenance.timestamp),
+        "machine_id": maintenance.machine_id,
+        "serial_number": (
+            maintenance.serial_number_snapshot
+            or (metadata.serial_number if metadata else None)
+            or maintenance.machine_id
+        ),
+        "item_code": maintenance.item,
+        "item_name": (
+            maintenance.item_name_snapshot
+            or (config.name if config else None)
+            or maintenance.item
+        ),
+        "performed_by": (
+            maintenance.performed_by_snapshot
+            or (performer.username if performer else None)
+            or "User tidak tersedia"
+        ),
+        "description": maintenance.description or "",
+        "region": metadata.region if metadata else "Tanpa Region",
+        "subregion": metadata.subregion if metadata else "Tanpa Subregion",
+        "is_archived": bool(metadata.is_archived) if metadata else False,
+    }
 
 
 def register_routes(app: Flask) -> None:
@@ -771,6 +877,11 @@ def register_routes(app: Flask) -> None:
     @roles_required("admin", "viewer")
     def admin_maintenance():
         return render_template("admin_maintenance.html")
+
+    @app.get("/maintenance-history")
+    @login_required
+    def maintenance_history():
+        return render_template("maintenance_history.html")
 
     @app.post("/update")
     @device_key_required
@@ -949,25 +1060,183 @@ def register_routes(app: Flask) -> None:
             }
         )
 
+    @app.get("/api/maintenance-history")
+    @login_required
+    def maintenance_history_api():
+        user = current_user()
+        query = maintenance_history_base_query(user)
+
+        date_from, error = parse_date_filter(
+            request.args.get("date_from", "").strip(), "Tanggal awal"
+        )
+        if error:
+            return json_error(error)
+        date_to, error = parse_date_filter(
+            request.args.get("date_to", "").strip(), "Tanggal akhir"
+        )
+        if error:
+            return json_error(error)
+        if date_from and date_to and date_from > date_to:
+            return json_error("Tanggal awal tidak boleh melebihi tanggal akhir")
+        if date_from:
+            query = query.filter(
+                Maintenance.timestamp
+                >= datetime.combine(date_from, datetime.min.time())
+            )
+        if date_to:
+            query = query.filter(
+                Maintenance.timestamp
+                < datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+            )
+
+        search = request.args.get("search", "").strip()
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Maintenance.machine_id.ilike(pattern),
+                    Maintenance.serial_number_snapshot.ilike(pattern),
+                    MachineMetadata.serial_number.ilike(pattern),
+                )
+            )
+        region = request.args.get("region", "").strip()
+        if region:
+            query = query.filter(MachineMetadata.region == region)
+        subregion = request.args.get("subregion", "").strip()
+        if subregion:
+            query = query.filter(MachineMetadata.subregion == subregion)
+        item_code = request.args.get("item_code", "").strip()
+        if item_code:
+            query = query.filter(Maintenance.item == item_code)
+        performer_name = request.args.get("performed_by", "").strip()
+        if performer_name:
+            pattern = f"%{performer_name}%"
+            query = query.filter(
+                or_(
+                    Maintenance.performed_by_snapshot.ilike(pattern),
+                    User.username.ilike(pattern),
+                )
+            )
+
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+            per_page = min(100, max(10, int(request.args.get("per_page", "50"))))
+        except ValueError:
+            return json_error("page dan per_page harus berupa angka")
+
+        total = query.count()
+        rows = (
+            query.order_by(Maintenance.timestamp.desc(), Maintenance.id.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "history": [maintenance_history_payload(*row) for row in rows],
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": total,
+                    "pages": max(1, (total + per_page - 1) // per_page),
+                },
+            }
+        )
+
+    @app.get("/api/maintenance-history/filters")
+    @login_required
+    def maintenance_history_filters_api():
+        base_query = maintenance_history_base_query(current_user())
+        regions = [
+            row.region
+            for row in (
+                base_query.with_entities(MachineMetadata.region.label("region"))
+                .filter(MachineMetadata.region.isnot(None))
+                .distinct()
+                .order_by(MachineMetadata.region)
+                .all()
+            )
+        ]
+        subregions = [
+            row.subregion
+            for row in (
+                base_query.with_entities(MachineMetadata.subregion.label("subregion"))
+                .filter(MachineMetadata.subregion.isnot(None))
+                .distinct()
+                .order_by(MachineMetadata.subregion)
+                .all()
+            )
+        ]
+        item_rows = (
+            base_query.with_entities(
+                Maintenance.item.label("item_code"),
+                func.max(Maintenance.item_name_snapshot).label("snapshot_name"),
+                func.max(MaintenanceConfig.name).label("config_name"),
+            )
+            .group_by(Maintenance.item)
+            .order_by(Maintenance.item)
+            .all()
+        )
+        performer_rows = (
+            base_query.with_entities(
+                func.coalesce(
+                    Maintenance.performed_by_snapshot,
+                    User.username,
+                    "User tidak tersedia",
+                ).label("performer")
+            )
+            .distinct()
+            .order_by("performer")
+            .all()
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "regions": regions,
+                "subregions": subregions,
+                "items": [
+                    {
+                        "item_code": row.item_code,
+                        "name": row.snapshot_name or row.config_name or row.item_code,
+                    }
+                    for row in item_rows
+                ],
+                "performers": [row.performer for row in performer_rows],
+            }
+        )
+
     @app.post("/maintenance-done")
     @roles_required("admin", "teknisi")
     def maintenance_done():
         data = get_json()
         machine_id = normalize_machine_id(data.get("machine_id"))
         item_code = str(data.get("item_code", "")).strip()
+        description = str(data.get("description", "")).strip()
+        if not description:
+            return json_error("Catatan maintenance wajib diisi")
+        if len(description) > 2000:
+            return json_error("Catatan maintenance maksimal 2000 karakter")
         machine = db.session.get(Machine, machine_id)
         config = MaintenanceConfig.query.filter_by(item_code=item_code, active=True).first()
         if not machine or not config:
             return json_error("Mesin atau item maintenance tidak ditemukan", 404)
         if not user_can_access_machine(current_user(), machine):
             return json_error("Mesin tidak ditemukan atau di luar wilayah akses", 404)
+        metadata = machine.metadata_record
+        performer = current_user()
         db.session.add(
             Maintenance(
                 machine_id=machine_id,
                 item=item_code,
                 dialysis_count=machine.completed_dialysis or 0,
-                description=str(data.get("description", "")).strip(),
-                performed_by=current_user().id,
+                description=description,
+                performed_by=performer.id,
+                serial_number_snapshot=(
+                    metadata.serial_number if metadata else machine_id
+                ),
+                item_name_snapshot=config.name,
+                performed_by_snapshot=performer.username,
             )
         )
         db.session.commit()
@@ -997,7 +1266,7 @@ def register_routes(app: Flask) -> None:
         db.session.commit()
         return jsonify({"ok": True, "metadata": metadata_payload(record)}), 201
 
-    @app.route("/api/metadata/<machine_id>", methods=["GET", "PUT", "DELETE"])
+    @app.route("/api/metadata/<machine_id>", methods=["GET", "PUT"])
     @roles_required("admin", "viewer")
     def metadata_item(machine_id: str):
         normalized = normalize_machine_id(machine_id)
@@ -1008,16 +1277,46 @@ def register_routes(app: Flask) -> None:
             return jsonify({"ok": True, "metadata": metadata_payload(record)})
         if current_user().role != "admin":
             return json_error("Viewer hanya memiliki akses baca", 403)
-        if request.method == "DELETE":
-            db.session.delete(record)
-            db.session.commit()
-            return jsonify({"ok": True})
         clean, error = validate_metadata(get_json(), partial=True)
         if error:
             return json_error(error)
         clean.pop("machine_id", None)
         for key, value in clean.items():
             setattr(record, key, value)
+        db.session.commit()
+        return jsonify({"ok": True, "metadata": metadata_payload(record)})
+
+    @app.post("/api/metadata/<machine_id>/archive")
+    @roles_required("admin")
+    def archive_metadata(machine_id: str):
+        normalized = normalize_machine_id(machine_id)
+        record = db.session.get(MachineMetadata, normalized)
+        if not record:
+            return json_error("Metadata tidak ditemukan", 404)
+        if record.is_archived:
+            return json_error("Mesin sudah diarsipkan", 409)
+        note = str(get_json().get("archive_note", "")).strip()
+        if not note:
+            return json_error("Alasan arsip wajib diisi")
+        if len(note) > 1000:
+            return json_error("Alasan arsip maksimal 1000 karakter")
+        record.is_archived = True
+        record.archived_at = utcnow()
+        record.archived_by = current_user().id
+        record.archive_note = note
+        db.session.commit()
+        return jsonify({"ok": True, "metadata": metadata_payload(record)})
+
+    @app.post("/api/metadata/<machine_id>/restore")
+    @roles_required("admin")
+    def restore_metadata(machine_id: str):
+        normalized = normalize_machine_id(machine_id)
+        record = db.session.get(MachineMetadata, normalized)
+        if not record:
+            return json_error("Metadata tidak ditemukan", 404)
+        if not record.is_archived:
+            return json_error("Mesin tidak sedang diarsipkan", 409)
+        record.is_archived = False
         db.session.commit()
         return jsonify({"ok": True, "metadata": metadata_payload(record)})
 
