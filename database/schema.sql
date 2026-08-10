@@ -40,7 +40,11 @@ CREATE TABLE IF NOT EXISTS machine_metadata (
     category VARCHAR(10) NOT NULL,
     installation_date DATE,
     registered_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    archived_at TIMESTAMP WITHOUT TIME ZONE,
+    archived_by INTEGER REFERENCES users(id),
+    archive_note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS errors (
@@ -71,8 +75,11 @@ CREATE TABLE IF NOT EXISTS maintenance (
     item VARCHAR(50) NOT NULL,
     dialysis_count INTEGER NOT NULL DEFAULT 0,
     timestamp TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    description TEXT,
-    performed_by INTEGER REFERENCES users(id)
+    description TEXT NOT NULL,
+    performed_by INTEGER REFERENCES users(id),
+    serial_number_snapshot VARCHAR(50) NOT NULL,
+    item_name_snapshot VARCHAR(100) NOT NULL,
+    performed_by_snapshot VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS humidity_logs (
@@ -94,11 +101,17 @@ CREATE TABLE IF NOT EXISTS voltage_events (
 CREATE INDEX IF NOT EXISTS idx_metadata_region_subregion
     ON machine_metadata (region, subregion);
 
+CREATE INDEX IF NOT EXISTS idx_metadata_archive_region_subregion
+    ON machine_metadata (is_archived, region, subregion);
+
 CREATE INDEX IF NOT EXISTS idx_errors_machine_received
     ON errors (machine_id, server_received_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_maintenance_machine_item_time
     ON maintenance (machine_id, item, timestamp DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_maintenance_history_time
+    ON maintenance (timestamp DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_maintenance_config_active_name
     ON maintenance_config (active, name);
