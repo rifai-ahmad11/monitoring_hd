@@ -28,6 +28,10 @@
 <hr class="section-divider">
 <section>
   <h2 class="table-title"><i class="fas fa-list" aria-hidden="true"></i> Daftar Metadata Mesin</h2>
+  <div class="tab-row" role="tablist" aria-label="Status mesin">
+    <button class="tab-button active" id="activeMetadataTab" type="button" role="tab">Mesin Aktif <span id="activeMetadataCount">0</span></button>
+    <button class="tab-button" id="archivedMetadataTab" type="button" role="tab">Mesin Diarsipkan <span id="archivedMetadataCount">0</span></button>
+  </div>
   <div class="filter-row">
     <select id="regionFilter"><option value="">Semua Region</option></select>
     <select id="subregionFilter"><option value="">Semua Subregion</option></select>
@@ -39,6 +43,26 @@
     </table>
   </div>
 </section>
+
+<div class="modal-backdrop hidden" id="archiveModal" role="dialog" aria-modal="true" aria-labelledby="archiveModalTitle">
+  <div class="modal-card">
+    <button class="modal-close" id="cancelArchiveTop" aria-label="Tutup">×</button>
+    <div class="modal-heading">
+      <span class="modal-icon archive"><i class="fas fa-archive" aria-hidden="true"></i></span>
+      <div><h3 id="archiveModalTitle">Arsipkan Mesin</h3><p id="archiveMachineDetails"></p></div>
+    </div>
+    <form id="archiveForm" class="modal-form">
+      <label>
+        <span>Alasan Arsip *</span>
+        <textarea id="archiveNote" required maxlength="1000" placeholder="Contoh: mesin dipindahkan ke gudang atau tidak lagi beroperasi."></textarea>
+      </label>
+      <div class="form-actions">
+        <button class="btn btn-muted" id="cancelArchive" type="button">Batal</button>
+        <button class="btn btn-danger" type="submit"><i class="fas fa-archive" aria-hidden="true"></i> Arsipkan</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 {% block admin_scripts %}
 <script src="{{ url_for('static', filename='js/admin_metadata.js') }}"></script>
