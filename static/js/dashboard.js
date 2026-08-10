@@ -8,6 +8,9 @@ const state = {
   hospital: null
 };
 
+const ARCHIVED_REGION = "Diarsipkan";
+let pendingMaintenance = null;
+
 const elements = {
   pageTitle: document.getElementById("pageTitle"),
   breadcrumb: document.getElementById("breadcrumb"),
@@ -47,9 +50,11 @@ function writeUrlState(patch, replace = false) {
 function filteredMachines(scope = "current") {
   return state.machines.filter((machine) => {
     const meta = machine.metadata;
+    if (state.category && meta.is_archived) return false;
     if (state.category && meta.category !== state.category) return false;
     if (scope === "category") return true;
-    if (state.region && meta.region !== state.region) return false;
+    if (state.region === ARCHIVED_REGION && !meta.is_archived) return false;
+    if (state.region && state.region !== ARCHIVED_REGION && (meta.is_archived || meta.region !== state.region)) return false;
     if (state.subregion && meta.subregion !== state.subregion) return false;
     if (state.hospital && meta.hospital_name !== state.hospital) return false;
     return true;
@@ -95,6 +100,7 @@ function renderSummary(machines) {
 function levels() {
   if (state.view === "categories" && !state.category) return "categories";
   if (!state.region) return "regions";
+  if (state.region === ARCHIVED_REGION) return "machines";
   if (!state.subregion) return "subregions";
   if (!state.hospital) return "hospitals";
   return "machines";
@@ -105,7 +111,7 @@ function titleForLevel(level) {
   if (level === "regions") return state.category ? `Kategori ${state.category}` : "Ringkasan Nasional";
   if (level === "subregions") return state.region;
   if (level === "hospitals") return state.subregion;
-  return state.hospital;
+  return state.region === ARCHIVED_REGION ? "Mesin Diarsipkan" : state.hospital;
 }
 
 function renderBreadcrumb(level) {
@@ -165,7 +171,7 @@ function renderSelections(level, machines) {
     elements.contentTitle.textContent = "Pilih Kategori";
     elements.selectionGrid.classList.add("category-grid");
     ["KSO", "Non-KSO"].forEach((category) => {
-      const items = state.machines.filter((m) => m.metadata.category === category);
+      const items = state.machines.filter((m) => !m.metadata.is_archived && m.metadata.category === category);
       const card = renderSelectionCard(category, items, "▣", {
         view: "summary", category, region: null, subregion: null, hospital: null
       });
@@ -180,7 +186,7 @@ function renderSelections(level, machines) {
   let icon;
   if (level === "regions") {
     elements.contentTitle.textContent = "Pilih Region";
-    groups = groupBy(machines, (m) => m.metadata.region);
+    groups = groupBy(machines, (m) => m.metadata.is_archived ? ARCHIVED_REGION : m.metadata.region);
     icon = "●";
   } else if (level === "subregions") {
     elements.contentTitle.textContent = "Pilih Subregion";
@@ -198,7 +204,8 @@ function renderSelections(level, machines) {
       : level === "subregions"
         ? { subregion: label, hospital: null }
         : { hospital: label };
-    elements.selectionGrid.appendChild(renderSelectionCard(label, items, icon, patch));
+    const cardIcon = level === "regions" && label === ARCHIVED_REGION ? "▣" : icon;
+    elements.selectionGrid.appendChild(renderSelectionCard(label, items, cardIcon, patch));
   });
   if (!Object.keys(groups).length) elements.emptyState.classList.remove("hidden");
 }
@@ -241,6 +248,7 @@ function renderMachines(machines) {
           <span class="serial">SN: ${escapeHtml(machine.metadata.serial_number)}</span>
         </div>
         <div class="badges">
+          ${machine.metadata.is_archived ? '<span class="badge archived">DIARSIPKAN</span>' : ""}
           ${machine.maintenance_count ? `<button class="badge maintenance" data-maintenance>⚠ ${machine.maintenance_count}</button>` : ""}
           ${machine.pump_status === "running" ? '<span class="badge treatment">TREATMENT</span>' : ""}
           <span class="badge ${machine.status === "running" ? "on" : "off"}">${machine.status === "running" ? "HD ON" : "HD OFF"}</span>
@@ -275,14 +283,19 @@ function render() {
   document.querySelector("[data-nav='summary']")?.classList.toggle("active", level !== "categories" && !state.category);
   elements.categoryNav.classList.toggle("active", level === "categories" || Boolean(state.category));
   renderBreadcrumb(level);
-  renderSummary(level === "categories" ? state.machines : machines);
+  const summaryMachines = (level === "categories" || (level === "regions" && !state.category))
+    ? state.machines.filter((machine) => !machine.metadata.is_archived)
+    : machines;
+  renderSummary(summaryMachines);
   if (level === "machines") renderMachines(machines);
   else renderSelections(level, machines);
 }
 
 function goBack() {
   const level = levels();
-  if (level === "machines") writeUrlState({ hospital: null });
+  if (level === "machines" && state.region === ARCHIVED_REGION) {
+    writeUrlState({ region: null, subregion: null, hospital: null });
+  } else if (level === "machines") writeUrlState({ hospital: null });
   else if (level === "hospitals") writeUrlState({ subregion: null, hospital: null });
   else if (level === "subregions") writeUrlState({ region: null, subregion: null, hospital: null });
   else if (state.category) writeUrlState({ view: "categories", category: null, region: null, subregion: null, hospital: null });
@@ -344,23 +357,56 @@ function openMaintenance(machine) {
       </div>
     </article>`).join("");
   container.querySelectorAll("[data-done]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      try {
-        await apiRequest("/maintenance-done", {
-          method: "POST",
-          body: JSON.stringify({ machine_id: machine.machine_id, item_code: button.dataset.done })
-        });
-        closeModals();
-        await loadMachines();
-        showToast("Maintenance berhasil ditandai selesai", "success");
-      } catch (error) {
-        showToast(error.message, "error");
-        button.disabled = false;
-      }
+    button.addEventListener("click", () => {
+      const item = machine.maintenance_required.find((entry) => entry.item_code === button.dataset.done);
+      if (!item) return;
+      pendingMaintenance = { machine, item };
+      document.getElementById("maintenanceConfirmDetails").innerHTML = `
+        <span class="modal-location">${escapeHtml(machine.metadata.hospital_name)} · Unit ${escapeHtml(machine.metadata.unit_number ?? "?")}</span>
+        <span class="modal-identifiers"><strong>Serial Number:</strong> ${escapeHtml(machine.metadata.serial_number)}</span>
+        <span class="modal-identifiers"><strong>Item:</strong> ${escapeHtml(item.name)}</span>`;
+      document.getElementById("maintenancePerformedBy").value = HD_APP.username;
+      document.getElementById("maintenanceDescription").value = "";
+      showModal("maintenanceConfirmModal");
+      document.getElementById("maintenanceDescription").focus();
     });
   });
   showModal("maintenanceModal");
+}
+
+function closeMaintenanceConfirm() {
+  document.getElementById("maintenanceConfirmModal").classList.add("hidden");
+  pendingMaintenance = null;
+}
+
+async function submitMaintenance(event) {
+  event.preventDefault();
+  if (!pendingMaintenance) return;
+  const description = document.getElementById("maintenanceDescription").value.trim();
+  if (!description) {
+    showToast("Catatan maintenance wajib diisi", "error");
+    return;
+  }
+  const submitButton = document.getElementById("submitMaintenanceConfirm");
+  submitButton.disabled = true;
+  try {
+    await apiRequest("/maintenance-done", {
+      method: "POST",
+      body: JSON.stringify({
+        machine_id: pendingMaintenance.machine.machine_id,
+        item_code: pendingMaintenance.item.item_code,
+        description
+      })
+    });
+    closeModals();
+    pendingMaintenance = null;
+    await loadMachines();
+    showToast("Maintenance berhasil disimpan ke riwayat", "success");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
 async function openVoltage(machine) {
@@ -539,6 +585,9 @@ elements.categoryNav.addEventListener("click", () => writeUrlState({
   view: "categories", category: null, region: null, subregion: null, hospital: null
 }));
 document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModals));
+document.getElementById("maintenanceConfirmForm").addEventListener("submit", submitMaintenance);
+document.getElementById("cancelMaintenanceConfirm").addEventListener("click", closeMaintenanceConfirm);
+document.getElementById("cancelMaintenanceConfirmTop").addEventListener("click", closeMaintenanceConfirm);
 document.querySelectorAll(".modal-backdrop").forEach((modal) => {
   modal.addEventListener("click", (event) => { if (event.target === modal) closeModals(); });
 });
