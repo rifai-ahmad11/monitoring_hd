@@ -1,0 +1,57 @@
+{% extends "admin_base.html" %}
+{% block title %}Riwayat Maintenance{% endblock %}
+{% block admin_icon %}<i class="fas fa-clipboard-list" aria-hidden="true"></i>{% endblock %}
+{% block admin_title %}Riwayat Maintenance{% endblock %}
+{% block admin_nav %}
+{% if current_user.role in ['admin', 'viewer'] %}
+<a class="btn btn-glass" href="/admin"><i class="fas fa-database" aria-hidden="true"></i> Metadata</a>
+<a class="btn btn-glass" href="/admin/maintenance"><i class="fas fa-tools" aria-hidden="true"></i> Maintenance Config</a>
+{% endif %}
+{% endblock %}
+{% block admin_content %}
+<section class="admin-card history-filter-card">
+  <h2><i class="fas fa-filter" aria-hidden="true"></i> Filter Riwayat</h2>
+  <form id="historyFilterForm" class="history-filter-grid viewer-enabled-form">
+    <label><span>Tanggal Awal</span><input id="dateFrom" type="date"></label>
+    <label><span>Tanggal Akhir</span><input id="dateTo" type="date"></label>
+    <label><span>Serial Number / Machine ID</span><input id="historySearch" placeholder="Cari serial number atau Machine ID"></label>
+    <label><span>Region</span><select id="historyRegion"><option value="">Semua Region</option></select></label>
+    <label><span>Subregion</span><select id="historySubregion"><option value="">Semua Subregion</option></select></label>
+    <label><span>Item Maintenance</span><select id="historyItem"><option value="">Semua Item</option></select></label>
+    <label><span>Performed By</span><select id="historyPerformer"><option value="">Semua User</option></select></label>
+    <div class="form-actions history-filter-actions">
+      <button class="btn btn-primary" type="submit"><i class="fas fa-search" aria-hidden="true"></i> Terapkan Filter</button>
+      <button class="btn btn-muted" id="resetHistoryFilter" type="button"><i class="fas fa-undo" aria-hidden="true"></i> Reset</button>
+    </div>
+  </form>
+</section>
+
+<section>
+  <div class="history-title-row">
+    <h2 class="table-title"><i class="fas fa-history" aria-hidden="true"></i> Catatan Maintenance Selesai</h2>
+    <span id="historyTotal" class="history-total">0 catatan</span>
+  </div>
+  <div class="table-card">
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Tanggal Maintenance</th>
+          <th>Serial Number Mesin</th>
+          <th>Item Maintenance</th>
+          <th>Performed By</th>
+          <th>Catatan</th>
+        </tr>
+      </thead>
+      <tbody id="maintenanceHistoryTable"></tbody>
+    </table>
+  </div>
+  <div class="pagination-row">
+    <button class="btn btn-glass" id="historyPrevious" type="button">← Sebelumnya</button>
+    <span id="historyPageInfo">Halaman 1 dari 1</span>
+    <button class="btn btn-glass" id="historyNext" type="button">Berikutnya →</button>
+  </div>
+</section>
+{% endblock %}
+{% block admin_scripts %}
+<script src="{{ url_for('static', filename='js/maintenance_history.js') }}"></script>
+{% endblock %}
