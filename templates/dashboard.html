@@ -11,6 +11,7 @@
     <nav class="sidebar-nav" aria-label="Navigasi utama">
       <a href="/" class="nav-link active" data-nav="summary"><span class="nav-icon"><i class="fas fa-chart-pie" aria-hidden="true"></i></span> Ringkasan</a>
       <button class="nav-link" id="categoryNav"><span class="nav-icon"><i class="fas fa-layer-group" aria-hidden="true"></i></span> Kategori</button>
+      <a href="/maintenance-history" class="nav-link"><span class="nav-icon"><i class="fas fa-clipboard-list" aria-hidden="true"></i></span> Riwayat Maintenance</a>
       {% if current_user.role in ['admin', 'viewer'] %}
       <a href="/admin" class="nav-link"><span class="nav-icon"><i class="fas fa-database" aria-hidden="true"></i></span> Admin Metadata</a>
       <a href="/admin/users" class="nav-link"><span class="nav-icon"><i class="fas fa-users-cog" aria-hidden="true"></i></span> Manajemen User</a>
@@ -60,6 +61,30 @@
       <div><h3>Maintenance Diperlukan</h3><p id="maintenanceMachine"></p></div>
     </div>
     <div id="maintenanceItems" class="maintenance-items"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="maintenanceConfirmModal" role="dialog" aria-modal="true" aria-labelledby="maintenanceConfirmTitle">
+  <div class="modal-card">
+    <button class="modal-close" id="cancelMaintenanceConfirmTop" aria-label="Tutup">×</button>
+    <div class="modal-heading">
+      <span class="modal-icon warning"><i class="fas fa-clipboard-check" aria-hidden="true"></i></span>
+      <div><h3 id="maintenanceConfirmTitle">Konfirmasi Maintenance Selesai</h3><p id="maintenanceConfirmDetails"></p></div>
+    </div>
+    <form id="maintenanceConfirmForm" class="modal-form">
+      <label>
+        <span>Performed By</span>
+        <input id="maintenancePerformedBy" disabled>
+      </label>
+      <label>
+        <span>Catatan Maintenance *</span>
+        <textarea id="maintenanceDescription" required maxlength="2000" placeholder="Tuliskan pekerjaan, pemeriksaan, atau komponen yang diganti."></textarea>
+      </label>
+      <div class="form-actions">
+        <button class="btn btn-muted" id="cancelMaintenanceConfirm" type="button">Batal</button>
+        <button class="btn btn-success" id="submitMaintenanceConfirm" type="submit"><i class="fas fa-check" aria-hidden="true"></i> Konfirmasi Selesai</button>
+      </div>
+    </form>
   </div>
 </div>
 
